@@ -17,6 +17,7 @@ local light: PointLight
 local capHome: Vector3
 local heat = 0 -- 0 calm .. 1 out of time
 local active = false
+local shown = 0 -- heat eased toward its target so the water never snaps
 
 function Scene.attach()
 	camera = workspace.CurrentCamera :: Camera
@@ -39,9 +40,10 @@ function Scene.attach()
 	end)
 
 	local rng = Random.new()
-	RunService.RenderStepped:Connect(function()
-		local rise = if active then heat else 0
-		local y = WATER_LOW + (WATER_HIGH - WATER_LOW) * rise
+	RunService.RenderStepped:Connect(function(dt)
+		local target = if active then heat else 0
+		shown += (target - shown) * math.min(1, dt * (if target > shown then 12 else 3))
+		local y = WATER_LOW + (WATER_HIGH - WATER_LOW) * shown
 		water.Position = Vector3.new(0, y + math.sin(os.clock() * 1.3) * 0.03, 0)
 		-- Steady glow when calm; a ragged flicker only in the last second and a half.
 		local base = 0.8

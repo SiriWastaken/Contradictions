@@ -21,13 +21,21 @@ local function circle(props: { [string]: any }, children: { Instance }?): Frame
 end
 
 local function eye(parent: Instance, x: number, glow: Color3, deep: Color3, slitVertical: boolean)
-	local socket = circle({
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(x, 0.36),
-		Size = UDim2.fromScale(0.3, 0),
-		BackgroundColor3 = Color3.fromRGB(5, 5, 6),
-		Parent = parent,
-	}, { new("UIAspectRatioConstraint", { AspectRatio = 1, DominantAxis = Enum.DominantAxis.Width }) })
+	local socket = circle(
+		{
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(x, 0.36),
+			Size = UDim2.fromScale(0.3, 0),
+			BackgroundColor3 = Color3.fromRGB(5, 5, 6),
+			Parent = parent,
+		},
+		{
+			new(
+				"UIAspectRatioConstraint",
+				{ AspectRatio = 1, DominantAxis = Enum.DominantAxis.Width }
+			),
+		}
+	)
 	new("UIStroke", { Color = deep, Thickness = 6, Parent = socket })
 	local iris = circle({
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -47,14 +55,23 @@ local function eye(parent: Instance, x: number, glow: Color3, deep: Color3, slit
 end
 
 local function buildFace(parent: Instance): Frame
-	local face = new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0, 0.7),
-		BackgroundTransparency = 1,
-		ClipsDescendants = true,
-		Parent = parent,
-	}, { new("UIAspectRatioConstraint", { AspectRatio = 0.86, DominantAxis = Enum.DominantAxis.Height }) })
+	local face = new(
+		"Frame",
+		{
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0, 0.7),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+			Parent = parent,
+		},
+		{
+			new(
+				"UIAspectRatioConstraint",
+				{ AspectRatio = 0.86, DominantAxis = Enum.DominantAxis.Height }
+			),
+		}
+	)
 
 	new("Frame", {
 		Size = UDim2.fromScale(0.5, 1),
@@ -69,7 +86,17 @@ local function buildFace(parent: Instance): Frame
 		BorderSizePixel = 0,
 		Parent = face,
 	}, { new("UIGradient", { Color = ColorSequence.new(c.acid, c.teal), Rotation = 90 }) })
-	new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0), Size = UDim2.new(0, 5, 1, 0), BackgroundColor3 = Color3.fromRGB(2, 2, 2), BorderSizePixel = 0, Parent = face })
+	new(
+		"Frame",
+		{
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.fromScale(0.5, 0),
+			Size = UDim2.new(0, 5, 1, 0),
+			BackgroundColor3 = Color3.fromRGB(2, 2, 2),
+			BorderSizePixel = 0,
+			Parent = face,
+		}
+	)
 
 	eye(face, 0.27, c.ember, c.crimson, true)
 	eye(face, 0.73, c.acid, c.forest, false)
@@ -88,22 +115,32 @@ local function buildFace(parent: Instance): Frame
 		local x = (i - 0.5) / teeth
 		local size = if i % 2 == 0 then 0.17 else 0.22
 		for _, top in { true, false } do
-			new("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(x, if top then 0 else 1),
-				Size = UDim2.fromScale(size, 0),
-				Rotation = 45,
-				BackgroundColor3 = c.bone,
-				BorderSizePixel = 0,
-				Parent = mouth,
-			}, { new("UIAspectRatioConstraint", { AspectRatio = 1, DominantAxis = Enum.DominantAxis.Width }) })
+			new(
+				"Frame",
+				{
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(x, if top then 0 else 1),
+					Size = UDim2.fromScale(size, 0),
+					Rotation = 45,
+					BackgroundColor3 = c.bone,
+					BorderSizePixel = 0,
+					Parent = mouth,
+				},
+				{
+					new(
+						"UIAspectRatioConstraint",
+						{ AspectRatio = 1, DominantAxis = Enum.DominantAxis.Width }
+					),
+				}
+			)
 		end
 	end
 	return face
 end
 
 local function sound(parent: Instance, id: string, volume: number, speed: number)
-	local s = new("Sound", { SoundId = id, Volume = volume, PlaybackSpeed = speed, Parent = parent })
+	local s =
+		new("Sound", { SoundId = id, Volume = volume, PlaybackSpeed = speed, Parent = parent })
 	s:Play()
 	return s
 end
@@ -127,7 +164,16 @@ function Jumpscare.play(gui: ScreenGui, onDone: () -> ())
 		Parent = gui,
 	})
 	local face = buildFace(overlay)
-	local flash = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = c.ember, BorderSizePixel = 0, ZIndex = 101, Parent = overlay })
+	local flash = new(
+		"Frame",
+		{
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = c.ember,
+			BorderSizePixel = 0,
+			ZIndex = 101,
+			Parent = overlay,
+		}
+	)
 
 	sound(overlay, "rbxasset://sounds/impact_explosion_03.mp3", 1, 0.7)
 	task.delay(0.04, function()
@@ -152,7 +198,9 @@ function Jumpscare.play(gui: ScreenGui, onDone: () -> ())
 		local amp = math.max(3, 20 * (1 - t / 0.8))
 		face.Position = UDim2.new(0.5, rng:NextInteger(-amp, amp), 0.5, rng:NextInteger(-amp, amp))
 		-- two hard flashes in the first third of a second, then dark
-		flash.BackgroundTransparency = if t > 0.2 and t < 0.27 then 0.55 else flash.BackgroundTransparency
+		flash.BackgroundTransparency = if t > 0.2 and t < 0.27
+			then 0.55
+			else flash.BackgroundTransparency
 	end)
 
 	task.delay(0.8, function()

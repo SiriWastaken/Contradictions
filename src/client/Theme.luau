@@ -83,35 +83,26 @@ end
 
 -- The fire/water rule: ember on the left half, acid on the right. Used under titles; the timer inverts it.
 function Theme.rule(parent: Instance, width: UDim, order: number?): Frame
-	local f = Theme.new(
-		"Frame",
-		{
-			Size = UDim2.new(width.Scale, width.Offset, 0, 2),
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			LayoutOrder = order or 0,
-			Parent = parent,
-		}
-	)
-	Theme.new(
-		"Frame",
-		{
-			Size = UDim2.fromScale(0.5, 1),
-			BackgroundColor3 = Theme.color.ember,
-			BorderSizePixel = 0,
-			Parent = f,
-		}
-	)
-	Theme.new(
-		"Frame",
-		{
-			Size = UDim2.fromScale(0.5, 1),
-			Position = UDim2.fromScale(0.5, 0),
-			BackgroundColor3 = Theme.color.acid,
-			BorderSizePixel = 0,
-			Parent = f,
-		}
-	)
+	local f = Theme.new("Frame", {
+		Size = UDim2.new(width.Scale, width.Offset, 0, 2),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = order or 0,
+		Parent = parent,
+	})
+	Theme.new("Frame", {
+		Size = UDim2.fromScale(0.5, 1),
+		BackgroundColor3 = Theme.color.ember,
+		BorderSizePixel = 0,
+		Parent = f,
+	})
+	Theme.new("Frame", {
+		Size = UDim2.fromScale(0.5, 1),
+		Position = UDim2.fromScale(0.5, 0),
+		BackgroundColor3 = Theme.color.acid,
+		BorderSizePixel = 0,
+		Parent = f,
+	})
 	return f
 end
 
