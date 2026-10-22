@@ -1,8 +1,9 @@
 --!strict
--- The game as the player sees it: HUD, instruction, the red button, tutorial, menu, death and game over.
--- The server decides everything that matters; this module renders and forwards presses.
+-- The round screen and the game's client-side flow: HUD, instruction, the red button, tutorial feedback,
+-- death. Full-screen text screens live in Ui/Screens. The server decides everything that matters; this
+-- module renders and forwards presses.
 -- Composition rule: fire (ember) owns the command and the clock, water (acid/mint) owns statements and
--- survival. The left-hand rule beside the instruction is split the same way: command above, answer below.
+-- survival. The rule beside the instruction is split the same way: command above, answer below.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,37 +11,24 @@ local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Layout = require(Shared.Logic.Layout)
 local Jumpscare = require(script.Parent.Jumpscare)
 local Scene = require(script.Parent.Scene)
-local Theme = require(script.Parent.Parent.Theme)
+local Screens = require(script.Parent.Parent.Ui.Screens)
+local Theme = require(script.Parent.Parent.Ui.Theme)
 
 local c, font, new, text, tween = Theme.color, Theme.font, Theme.new, Theme.text, Theme.tween
 
 local BUTTON_FILL = 0.8 -- GUI cap diameter relative to the 3D cap, so the 3D rim stays visible and clickable
+local FLICKER_INTERVAL = 0.08 -- the fuse tip re-rolls this often, not every frame
 
 local GameUI = {}
 
 local function thousands(n: number): string
 	local s = tostring(math.floor(n))
 	return (s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
-end
-
-local function rich(color: Color3, s: string): string
-	return ('<font color="%s">%s</font>'):format(Theme.hex(color), s)
-end
-
--- Press commands burn; "do not press" is water. The condition stays bone.
-local function styleDirective(s: string): string
-	local hold = s:match("^Do not press the button%.?$")
-	if hold then
-		return rich(c.mint, s)
-	end
-	local rest = s:match("^Press the button(.*)$")
-	if rest then
-		return rich(c.ember, "Press the button") .. rest
-	end
-	return s
 end
 
 function GameUI.start()
@@ -72,48 +60,44 @@ function GameUI.start()
 	})
 
 	------------------------------------------------------------------ HUD
-	local hud = new(
-		"Frame",
-		{
-			Name = "HUD",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Visible = false,
-			Parent = gui,
-		}
-	)
+	local hud = new("Frame", {
+		Name = "HUD",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = gui,
+	})
 
 	-- The fuse: fire burning down across a toxic track. It is the countdown's shape; the number is its value.
-	local fuseTrack = new(
-		"Frame",
-		{
-			Size = UDim2.new(1, 0, 0, 4),
-			BackgroundColor3 = c.forest,
-			BorderSizePixel = 0,
-			Parent = hud,
-		}
-	)
-	local fuseFill = new(
-		"Frame",
-		{
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = c.ember,
-			BorderSizePixel = 0,
-			Parent = fuseTrack,
-		}
-	)
-	local fuseTip = new(
-		"Frame",
-		{
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Size = UDim2.fromOffset(10, 12),
-			Position = UDim2.fromScale(1, 0.5),
-			BackgroundColor3 = c.bone,
-			BorderSizePixel = 0,
-			Parent = fuseTrack,
-		}
-	)
+	local fuseTrack = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 4),
+		BackgroundColor3 = c.forest,
+		BorderSizePixel = 0,
+		Parent = hud,
+	})
+	local fuseFill = new("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = c.ember,
+		BorderSizePixel = 0,
+		Parent = fuseTrack,
+	})
+	local fuseTip = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(10, 12),
+		Position = UDim2.fromScale(1, 0.5),
+		BackgroundColor3 = c.bone,
+		BorderSizePixel = 0,
+		Parent = fuseTrack,
+	})
 
+	-- Round, timer and score share one bar so narrow screens can scale it as a unit (see Layout.barScale).
+	local barScale = new("UIScale", {})
+	local bar = new("Frame", {
+		Name = "Bar",
+		Size = UDim2.new(1, 0, 0, Layout.BAR_HEIGHT),
+		BackgroundTransparency = 1,
+		Parent = hud,
+	}, { barScale })
 	local leftCaption = text({
 		Position = UDim2.fromOffset(24, 16),
 		Size = UDim2.fromOffset(200, 16),
@@ -121,7 +105,7 @@ function GameUI.start()
 		TextSize = 14,
 		TextColor3 = c.ash,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = hud,
+		Parent = bar,
 	})
 	local leftValue = text({
 		Position = UDim2.fromOffset(24, 30),
@@ -131,7 +115,7 @@ function GameUI.start()
 		FontFace = font.displayBold,
 		RichText = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = hud,
+		Parent = bar,
 	})
 	local rightCaption = text({
 		AnchorPoint = Vector2.new(1, 0),
@@ -141,7 +125,7 @@ function GameUI.start()
 		TextSize = 14,
 		TextColor3 = c.ash,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Parent = hud,
+		Parent = bar,
 	})
 	local rightValue = text({
 		AnchorPoint = Vector2.new(1, 0),
@@ -152,7 +136,7 @@ function GameUI.start()
 		FontFace = font.displayBold,
 		RichText = true,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Parent = hud,
+		Parent = bar,
 	})
 	local skipButton = new("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
@@ -165,7 +149,7 @@ function GameUI.start()
 		TextColor3 = c.ash,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Visible = false,
-		Parent = hud,
+		Parent = bar,
 	})
 	skipButton.MouseEnter:Connect(function()
 		skipButton.TextColor3 = c.ember
@@ -179,7 +163,7 @@ function GameUI.start()
 		Size = UDim2.fromOffset(200, 64),
 		Text = "5.0",
 		TextSize = 56,
-		Parent = hud,
+		Parent = bar,
 	})
 
 	------------------------------------------------------------------ Instruction block
@@ -187,7 +171,7 @@ function GameUI.start()
 		Name = "Instruction",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 104),
-		Size = UDim2.new(0.84, 0, 0.38, 0),
+		Size = UDim2.new(0.84, 0, 0, 300),
 		BackgroundTransparency = 1,
 		Visible = false,
 		Parent = hud,
@@ -200,34 +184,25 @@ function GameUI.start()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = block,
 	})
-	local body = new(
-		"Frame",
-		{
-			Position = UDim2.fromOffset(0, 28),
-			Size = UDim2.new(1, 0, 1, -28),
-			BackgroundTransparency = 1,
-			Parent = block,
-		}
-	)
-	new(
-		"Frame",
-		{
-			Size = UDim2.new(0, 2, 0.5, -6),
-			BackgroundColor3 = c.ember,
-			BorderSizePixel = 0,
-			Parent = body,
-		}
-	)
-	new(
-		"Frame",
-		{
-			Position = UDim2.new(0, 0, 0.5, 6),
-			Size = UDim2.new(0, 2, 0.5, -6),
-			BackgroundColor3 = c.acid,
-			BorderSizePixel = 0,
-			Parent = body,
-		}
-	)
+	local body = new("Frame", {
+		Position = UDim2.fromOffset(0, 28),
+		Size = UDim2.new(1, 0, 1, -28),
+		BackgroundTransparency = 1,
+		Parent = block,
+	})
+	new("Frame", {
+		Size = UDim2.new(0, 2, 0.5, -6),
+		BackgroundColor3 = c.ember,
+		BorderSizePixel = 0,
+		Parent = body,
+	})
+	local acidRule = new("Frame", {
+		Position = UDim2.new(0, 0, 0.5, 6),
+		Size = UDim2.new(0, 2, 0.5, -6),
+		BackgroundColor3 = c.acid,
+		BorderSizePixel = 0,
+		Parent = body,
+	})
 
 	local directive = text({
 		Position = UDim2.fromOffset(24, 0),
@@ -242,62 +217,40 @@ function GameUI.start()
 	})
 	new("UITextSizeConstraint", { MaxTextSize = 40, MinTextSize = 14, Parent = directive })
 
-	local lower = new(
-		"Frame",
-		{
-			Position = UDim2.new(0, 24, 0.5, 6),
-			Size = UDim2.new(1, -24, 0.5, -6),
-			BackgroundTransparency = 1,
-			Parent = body,
-		}
-	)
-	local quote = text({
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		TextScaled = true,
-		TextWrapped = true,
-		TextColor3 = c.acid,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Visible = false,
-		Parent = lower,
+	local lower = new("Frame", {
+		Position = UDim2.new(0, 24, 0.5, 6),
+		Size = UDim2.new(1, -24, 0.5, -6),
+		BackgroundTransparency = 1,
+		Parent = body,
 	})
-	new("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 12, Parent = quote })
-	local coach = text({
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		TextScaled = true,
-		TextWrapped = true,
-		TextColor3 = c.mint,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Visible = false,
-		Parent = lower,
-	})
-	new("UITextSizeConstraint", { MaxTextSize = 20, MinTextSize = 12, Parent = coach })
-	local verdict = text({
-		Size = UDim2.new(1, -150, 0.36, 0),
-		Text = "",
-		TextScaled = true,
-		FontFace = font.displayBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Visible = false,
-		Parent = lower,
-	})
-	new("UITextSizeConstraint", { MaxTextSize = 36, MinTextSize = 16, Parent = verdict })
-	local detail = text({
-		Position = UDim2.fromScale(0, 0.4),
-		Size = UDim2.fromScale(1, 0.6),
-		Text = "",
-		TextScaled = true,
-		TextWrapped = true,
-		TextColor3 = c.ash,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Visible = false,
-		Parent = lower,
-	})
-	new("UITextSizeConstraint", { MaxTextSize = 18, MinTextSize = 11, Parent = detail })
+	local function lowerText(
+		color: Color3,
+		maxSize: number,
+		minSize: number,
+		face: Font?
+	): TextLabel
+		local t = text({
+			Size = UDim2.fromScale(1, 1),
+			Text = "",
+			TextScaled = true,
+			TextWrapped = true,
+			FontFace = face,
+			TextColor3 = color,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Visible = false,
+			Parent = lower,
+		})
+		new("UITextSizeConstraint", { MaxTextSize = maxSize, MinTextSize = minSize, Parent = t })
+		return t
+	end
+	local quote = lowerText(c.acid, 30, 12, nil)
+	local coach = lowerText(c.mint, 20, 12, nil)
+	local verdict = lowerText(c.bone, 36, 16, font.displayBold)
+	verdict.Size = UDim2.new(1, -150, 0.36, 0)
+	local detail = lowerText(c.ash, 18, 11, nil)
+	detail.Position = UDim2.fromScale(0, 0.4)
+	detail.Size = UDim2.fromScale(1, 0.6)
 	local continueButton = new("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0),
@@ -319,23 +272,17 @@ function GameUI.start()
 	end)
 
 	------------------------------------------------------------------ The button
-	local capStroke = new(
-		"UIStroke",
-		{
-			Color = Color3.fromRGB(58, 6, 6),
-			Thickness = 4,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}
-	)
-	local heartbeat = new(
-		"UIStroke",
-		{
-			Color = c.ember,
-			Thickness = 2,
-			Transparency = 0.7,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}
-	)
+	local capStroke = new("UIStroke", {
+		Color = Color3.fromRGB(58, 6, 6),
+		Thickness = 4,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	})
+	local heartbeat = new("UIStroke", {
+		Color = c.ember,
+		Thickness = 2,
+		Transparency = 0.7,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	})
 	local button = new("TextButton", {
 		Name = "PressButton",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -358,21 +305,17 @@ function GameUI.start()
 		capStroke,
 	})
 	-- Inner ring: the heartbeat. Slow when calm, frantic as the clock dies.
-	new(
-		"Frame",
-		{
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.78, 0.78),
-			BackgroundTransparency = 1,
-			Active = false,
-			Parent = button,
-		},
-		{
-			new("UICorner", { CornerRadius = UDim.new(1, 0) }),
-			heartbeat,
-		}
-	)
+	new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.78, 0.78),
+		BackgroundTransparency = 1,
+		Active = false,
+		Parent = button,
+	}, {
+		new("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		heartbeat,
+	})
 	local pressLabel = text({
 		Size = UDim2.fromScale(1, 0.3),
 		Position = UDim2.fromScale(0, 0.34),
@@ -383,218 +326,42 @@ function GameUI.start()
 		Parent = button,
 	})
 	new("UITextSizeConstraint", { MaxTextSize = 72, Parent = pressLabel })
-	local flash = new(
-		"Frame",
-		{
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = c.bone,
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			Active = false,
-			Parent = button,
-		},
-		{ new("UICorner", { CornerRadius = UDim.new(1, 0) }) }
-	)
+	local flash = new("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = c.bone,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Active = false,
+		Parent = button,
+	}, { new("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 	local buttonSize = 200
 
-	local function layoutButton()
+	-- Everything below the bar is placed relative to the 3D button, so it stays in step with the camera.
+	local function layout()
+		local viewport = Scene.viewport()
 		local centre, diameter = Scene.buttonRect()
 		buttonSize = math.floor(diameter * BUTTON_FILL)
 		button.Size = UDim2.fromOffset(buttonSize, buttonSize)
 		button.Position = UDim2.fromOffset(centre.X, centre.Y)
-	end
-	layoutButton()
-	Scene.onViewportChanged(layoutButton)
 
-	------------------------------------------------------------------ Screens (menu, offer, game over, ...)
-	local screen = new(
-		"Frame",
-		{
-			Name = "Screen",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = c.ink,
-			BackgroundTransparency = 0.3,
-			BorderSizePixel = 0,
-			Active = true,
-			Visible = false,
-			Parent = gui,
-		}
-	)
-	local column = new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.fromScale(0.08, 0.5),
-		Size = UDim2.new(0.84, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		Parent = screen,
-	}, {
-		new("UISizeConstraint", { MaxSize = Vector2.new(600, 9999) }),
-		new("UIListLayout", { Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder }),
-	})
-	local order = 0
-	local function nextOrder(): number
-		order += 1
-		return order
+		local scale = Layout.barScale(viewport.X)
+		barScale.Scale = scale
+		bar.Size = UDim2.new(1 / scale, 0, 0, Layout.BAR_HEIGHT) -- UIScale shrinks the bar; widen it back
+		local top = Layout.blockTop(scale)
+		block.Position = UDim2.new(0.5, 0, 0, top)
+		block.Size =
+			UDim2.new(0.84, 0, 0, Layout.blockHeight(viewport.Y, top, centre.Y - buttonSize / 2))
 	end
-
-	local function clearColumn(dim: number)
-		for _, child in column:GetChildren() do
-			if child:IsA("GuiObject") then
-				child:Destroy()
-			end
-		end
-		order = 0
-		screen.BackgroundTransparency = dim
-		hud.Visible = false
-		screen.Visible = true
-	end
-
-	local function title(s: string, color: Color3, size: number): TextLabel
-		local t = text({
-			Size = UDim2.new(1, 0, 0, size + 8),
-			Text = s,
-			TextScaled = true,
-			FontFace = font.displayBold,
-			TextColor3 = color,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = nextOrder(),
-			Parent = column,
-		})
-		new("UITextSizeConstraint", { MaxTextSize = size, Parent = t })
-		return t
-	end
-	local function paragraph(s: string, color: Color3?, size: number?): TextLabel
-		return text({
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Text = s,
-			TextSize = size or 18,
-			TextWrapped = true,
-			RichText = true,
-			TextColor3 = color or c.ash,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = nextOrder(),
-			Parent = column,
-		})
-	end
-	local function stat(label: string, value: string)
-		local row = new(
-			"Frame",
-			{
-				Size = UDim2.new(1, 0, 0, 44),
-				BackgroundTransparency = 1,
-				LayoutOrder = nextOrder(),
-				Parent = column,
-			}
-		)
-		text({
-			Size = UDim2.new(0.5, 0, 1, 0),
-			Text = label,
-			TextSize = 14,
-			TextColor3 = c.ash,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Bottom,
-			Parent = row,
-		})
-		text({
-			Size = UDim2.new(0.5, 0, 1, 0),
-			Position = UDim2.fromScale(0.5, 0),
-			Text = value,
-			TextSize = 40,
-			FontFace = font.displayBold,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			Parent = row,
-		})
-	end
-
-	-- Text-first option: no box. A bar and the ember colour say "this one".
-	local function option(label: string, run: () -> ()): TextButton
-		local btn = new(
-			"TextButton",
-			{
-				Size = UDim2.new(1, 0, 0, 56),
-				BackgroundTransparency = 1,
-				Text = "",
-				AutoButtonColor = false,
-				LayoutOrder = nextOrder(),
-				Parent = column,
-			}
-		)
-		local bar = new(
-			"Frame",
-			{
-				Size = UDim2.new(0, 3, 0, 0),
-				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.fromScale(0, 0.5),
-				BackgroundColor3 = c.ember,
-				BorderSizePixel = 0,
-				Parent = btn,
-			}
-		)
-		local t = text({
-			Position = UDim2.fromOffset(20, 0),
-			Size = UDim2.new(1, -20, 1, 0),
-			Text = label,
-			TextSize = 40,
-			FontFace = font.displayBold,
-			TextColor3 = c.bone,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = btn,
-		})
-		btn.MouseEnter:Connect(function()
-			t.TextColor3 = c.ember
-			tween(bar, 0.12, { Size = UDim2.new(0, 3, 0, 36) })
-		end)
-		btn.MouseLeave:Connect(function()
-			t.TextColor3 = c.bone
-			tween(bar, 0.12, { Size = UDim2.new(0, 3, 0, 0) })
-		end)
-		btn.Activated:Connect(run)
-		return btn
-	end
-
-	-- The one solid slab in the interface: reserved for the action that matters most after dying.
-	local function slab(label: string, run: () -> ())
-		local btn = new(
-			"TextButton",
-			{
-				Size = UDim2.new(1, 0, 0, 80),
-				BackgroundColor3 = c.molten,
-				BorderSizePixel = 0,
-				AutoButtonColor = false,
-				Text = label,
-				TextSize = 56,
-				FontFace = font.displayBold,
-				TextColor3 = c.bone,
-				LayoutOrder = nextOrder(),
-				Parent = column,
-			},
-			{
-				new(
-					"UIStroke",
-					{
-						Color = c.crimson,
-						Thickness = 3,
-						ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-					}
-				),
-				new("UIGradient", { Color = ColorSequence.new(c.ember, c.molten), Rotation = 90 }),
-			}
-		)
-		btn.MouseEnter:Connect(function()
-			tween(btn, 0.1, { BackgroundColor3 = c.ember })
-		end)
-		btn.MouseLeave:Connect(function()
-			tween(btn, 0.1, { BackgroundColor3 = c.molten })
-		end)
-		btn.Activated:Connect(run)
-	end
+	layout()
+	Scene.onViewportChanged(layout)
 
 	------------------------------------------------------------------ Round state
 	local current: { [string]: any }? = nil
 	local state = "menu" -- menu | active | review | waiting | dead
 	local locked = false
 	local profile: { [string]: any }? = nil
+	local reducedFlashing = false
+	local screens: Screens.Screens
 	local startMode: (string) -> ()
 	local showMenu: () -> ()
 
@@ -663,8 +430,12 @@ function GameUI.start()
 		end
 	end)
 
+	-- Per-frame work only while a round is live; text and colours are touched only when they change.
 	local rng = Random.new()
-	RunService.RenderStepped:Connect(function()
+	local lastTenths = -1
+	local lastBand = 0
+	local sinceFlicker = 0
+	RunService.RenderStepped:Connect(function(dt)
 		local round = current
 		if state ~= "active" or not round then
 			Scene.setHeat(0, false)
@@ -672,13 +443,29 @@ function GameUI.start()
 		end
 		local left = round.endsAt - workspace:GetServerTimeNow()
 		local frac = math.clamp(left / Config.ROUND_SECONDS, 0, 1)
-		timerLabel.Text = string.format("%.1f", math.max(left, 0))
 		fuseFill.Size = UDim2.fromScale(frac, 1)
 		fuseTip.Position = UDim2.fromScale(frac, 0.5)
-		fuseTip.BackgroundTransparency = rng:NextNumber(0, 0.45)
-		local urgent = if left > 3 then c.bone elseif left > 1.5 then c.ember else c.molten
-		timerLabel.TextColor3 = urgent
-		fuseFill.BackgroundColor3 = if left > 1.5 then c.ember else c.molten
+		sinceFlicker += dt
+		if sinceFlicker >= FLICKER_INTERVAL then
+			sinceFlicker = 0
+			fuseTip.BackgroundTransparency = if reducedFlashing
+				then 0.2
+				else rng:NextNumber(0, 0.45)
+		end
+		local tenths = math.max(math.floor(left * 10), 0)
+		if tenths ~= lastTenths then
+			lastTenths = tenths
+			timerLabel.Text = string.format("%.1f", tenths / 10)
+		end
+		local band = if left > 3 then 1 elseif left > 1.5 then 2 else 3
+		if band ~= lastBand then
+			lastBand = band
+			timerLabel.TextColor3 = if band == 1
+				then c.bone
+				elseif band == 2 then c.ember
+				else c.molten
+			fuseFill.BackgroundColor3 = if band == 3 then c.molten else c.ember
+		end
 		Scene.setHeat(1 - frac, true)
 		if not locked then
 			local speed = 2.4 + (1 - frac) * 7
@@ -695,6 +482,7 @@ function GameUI.start()
 		coach.Visible = which == "coach"
 		verdict.Visible = which == "result"
 		detail.Visible = which == "result"
+		acidRule.Visible = which ~= nil
 		continueButton.Visible = which == "result" and current ~= nil and current.mode == "tutorial"
 	end
 
@@ -702,13 +490,14 @@ function GameUI.start()
 		current = r
 		state = "active"
 		locked = false
-		screen.Visible = false
+		lastTenths, lastBand = -1, 0
+		screens.hide()
 		hud.Visible = true
 		block.Visible = true
 		button.Visible = true
 		local tutorial = r.mode == "tutorial"
 		note.Text = if r.tag then "— " .. r.tag else ""
-		directive.Text = styleDirective(r.directive)
+		directive.Text = Screens.styleDirective(r.directive)
 		if r.statement then
 			quote.Text = "“" .. r.statement .. "”"
 			setLower("quote")
@@ -723,15 +512,13 @@ function GameUI.start()
 			string.format("<font size='28' color='%s'>/%d</font>", Theme.hex(c.ash), r.total)
 		if tutorial then
 			leftValue.Text = string.format("%d", r.index) .. fraction
-			rightCaption.Visible = false
-			rightValue.Visible = false
 		else
 			leftValue.Text = string.format("%02d", r.index) .. fraction
-			rightCaption.Visible = true
-			rightValue.Visible = true
 			rightCaption.Text = if r.streak > 1 then ("SCORE   x%d"):format(r.streak) else "SCORE"
 			rightValue.Text = thousands(r.score)
 		end
+		rightCaption.Visible = not tutorial
+		rightValue.Visible = not tutorial
 		skipButton.Visible = tutorial
 		timerLabel.Text = string.format("%.1f", Config.ROUND_SECONDS)
 		timerLabel.TextColor3 = c.bone
@@ -740,42 +527,10 @@ function GameUI.start()
 		setButton("PRESS", false)
 	end
 
-	local function showGameOver(r: { [string]: any }, round: { [string]: any })
-		clearColumn(0.12)
-		local t = title("GAME OVER", c.molten, 96)
-		-- Ragged flicker as it lands, then steady.
-		task.spawn(function()
-			for _, tr in { 1, 0, 1, 0.4, 1, 0 } do
-				t.TextTransparency = tr
-				task.wait(0.06)
-			end
-		end)
-		Theme.rule(column, UDim.new(0, 160), nextOrder())
-		paragraph(("Round %d of %d."):format(r.index, round.total), c.ash)
-		paragraph(styleDirective(round.directive), c.bone, 22)
-		if round.statement then
-			paragraph(rich(c.acid, "“" .. round.statement .. "”"), c.bone, 20)
-		end
-		local did = if r.pressed
-			then "You pressed."
-			elseif r.timedOut then "You did nothing."
-			else "You held."
-		paragraph(rich(c.molten, did) .. " " .. r.lines[#r.lines], c.ash, 16)
-		stat("SCORE", thousands(r.score))
-		stat("BEST", thousands(r.best))
-		slab("RESTART", function()
-			startMode("run")
-		end)
-		option("MENU", function()
-			showMenu()
-		end)
-		state = "dead"
-	end
-
 	local function showResult(r: { [string]: any })
 		local round = current
 		if not round or r.token ~= round.token then
-			return
+			return -- a result for a round that is no longer on screen
 		end
 		state = "review"
 		if r.pressed and not locked then
@@ -792,21 +547,21 @@ function GameUI.start()
 			-- One death, one jumpscare: state leaves "review" for "dead" before anything can run again.
 			state = "dead"
 			Jumpscare.play(gui, function()
-				showGameOver(r, round)
-			end)
+				screens.gameOver(r, round, reducedFlashing)
+			end, reducedFlashing)
 			return
 		end
 
 		local tutorial = r.mode == "tutorial"
 		if r.verdict == "correct" then
 			verdict.TextColor3 = c.acid
-			verdict.Text = if r.delta > 0 then ("SURVIVED  +%d"):format(r.delta) else "CORRECT"
+			verdict.Text = if r.delta > 0 then ("Survived  +%d"):format(r.delta) else "Correct"
 		elseif r.verdict == "paradox" then
 			verdict.TextColor3 = c.mint
-			verdict.Text = "NO ANSWER EXISTED"
+			verdict.Text = "No answer existed"
 		else
 			verdict.TextColor3 = c.molten
-			verdict.Text = "WRONG"
+			verdict.Text = "Wrong"
 		end
 		if tutorial then
 			local lines = table.clone(r.lines)
@@ -815,124 +570,88 @@ function GameUI.start()
 			end
 			detail.Text = table.concat(lines, "\n")
 			continueButton.Text = if r.last then "FINISH" else "CONTINUE"
-		elseif r.verdict == "paradox" then
-			detail.Text = r.lines[#r.lines - 1] .. "\n" .. r.lines[#r.lines]
-			rightValue.Text = thousands(r.score)
 		else
-			detail.Text = ""
+			detail.Text = if r.verdict == "paradox"
+				then r.lines[#r.lines - 1] .. "\n" .. r.lines[#r.lines]
+				else ""
 			rightValue.Text = thousands(r.score)
 		end
 		setLower("result")
 	end
 
-	local function showFinished(r: { [string]: any })
+	local function leaveRound()
 		state = "menu"
 		current = nil
 		button.Visible = false
 		block.Visible = false
-		if r.mode == "tutorial" then
-			if profile then
-				profile.hasCompletedTutorial = true
-			end
-			clearColumn(0.3)
-			title("READY", c.acid, 88)
-			Theme.rule(column, UDim.new(0, 160), nextOrder())
-			paragraph(
-				"From here the instructions get harder. Some refer to themselves. Some have two right answers. A few have none. A wrong decision ends the run.",
-				c.ash
-			)
-			option("START", function()
-				startMode("run")
-			end)
-			option("PRACTICE AGAIN", function()
-				startMode("tutorial")
-			end)
+	end
+
+	local function showFinished(r: { [string]: any })
+		leaveRound()
+		if r.faulted then
+			showMenu() -- the server could not evaluate a round; it logged why
+		elseif r.mode == "tutorial" then
+			screens.ready()
 		else
-			clearColumn(0.2)
-			title("SURVIVED", c.acid, 88)
-			Theme.rule(column, UDim.new(0, 160), nextOrder())
-			paragraph("Every round answered. Some of them could not be answered at all.", c.ash)
-			stat("SCORE", thousands(r.score))
-			stat("BEST", thousands(r.best))
-			stat("PARADOXES MET", tostring(r.paradoxes))
-			slab("PLAY AGAIN", function()
-				startMode("run")
-			end)
-			option("MENU", function()
-				showMenu()
-			end)
+			screens.survived(r)
 		end
 	end
 
 	startMode = function(mode: string)
 		state = "waiting"
 		current = nil
-		screen.Visible = false
+		screens.hide()
 		block.Visible = false
 		button.Visible = false
 		startEvent:FireServer(mode)
 	end
 
-	local function showOffer()
-		clearColumn(0.3)
-		title("FIRST TIME?", c.ember, 80)
-		Theme.rule(column, UDim.new(0, 160), nextOrder())
-		paragraph(
-			"Four practice rounds teach the rules: the five seconds, press or hold, and what a wrong decision costs. Nothing in them is scored and nothing in them can kill you.",
-			c.ash
-		)
-		option("PLAY TUTORIAL", function()
-			if profile then
-				profile.status = "returning"
-			end
-			startMode("tutorial")
-		end)
-		option("SKIP TUTORIAL", function()
-			if profile then
-				profile.status = "returning"
-			end
-			onboardEvent:FireServer("skip")
-			startMode("run")
-		end)
-	end
-
 	showMenu = function()
 		startEvent:FireServer("menu")
-		state = "menu"
-		current = nil
-		button.Visible = false
-		block.Visible = false
-		clearColumn(0.3)
-		title("CONTRADICTIONS", c.bone, 84)
-		Theme.rule(column, UDim.new(1, 0), nextOrder())
-		paragraph(
-			"Read the instruction. Press the button, or don't.\nYou have five seconds.",
-			c.ash,
-			20
-		)
-		local p = profile
-		if not p then
-			paragraph("reading the record...", c.ash, 16)
-			return
+		leaveRound()
+		screens.menu(if profile then profile.status else nil, reducedFlashing)
+	end
+
+	-- A new player is only marked "returning" locally; the server decides what is stored.
+	local function markReturning()
+		if profile then
+			profile.status = "returning"
 		end
-		option("PLAY", function()
-			if p.status == "new" then
-				showOffer()
+	end
+
+	screens = Screens.new(gui, {
+		play = function()
+			-- Ask the server again at the moment of choosing; it is the only authority on onboarding.
+			profile = getProfile:InvokeServer() or profile
+			if profile and profile.status == "new" then
+				screens.offer()
 			else
 				startMode("run")
 			end
-		end)
-		option("HOW TO PLAY", function()
+		end,
+		tutorial = function()
+			markReturning()
 			startMode("tutorial")
-		end)
-		if p.status == "unavailable" then
-			paragraph(
-				"Saved progress could not be loaded, so the tutorial will not be offered or remembered this session.",
-				c.ash,
-				14
-			)
-		end
-	end
+		end,
+		skipTutorial = function()
+			markReturning()
+			onboardEvent:FireServer("skip")
+			startMode("run")
+		end,
+		run = function()
+			startMode("run")
+		end,
+		menu = function()
+			showMenu()
+		end,
+		toggleFlashing = function()
+			reducedFlashing = not reducedFlashing
+			Scene.setReduced(reducedFlashing)
+			return reducedFlashing
+		end,
+	}, function()
+		hud.Visible = false
+	end)
 
 	roundEvent.OnClientEvent:Connect(showRound)
 	resultEvent.OnClientEvent:Connect(showResult)
@@ -941,7 +660,7 @@ function GameUI.start()
 	showMenu()
 	task.spawn(function()
 		profile = getProfile:InvokeServer()
-		if state == "menu" and screen.Visible then
+		if state == "menu" and screens.isOpen() then
 			showMenu()
 		end
 	end)

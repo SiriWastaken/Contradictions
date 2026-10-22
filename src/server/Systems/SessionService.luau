@@ -6,15 +6,15 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Util.Remotes)
+local Judge = require(Shared.Logic.Judge)
 local Render = require(Shared.Logic.Render)
 local Rounds = require(Shared.Rounds)
 local Rules = require(Shared.Logic.Rules)
--- selene: allow(incorrect_standard_library_use)
-local Profiles = require(script.Parent.ProfileService)
 
 type Session = {
 	mode: string,
@@ -47,7 +47,7 @@ local function finish(player: Player, s: Session)
 	if s.mode == "run" then
 		best[player] = math.max(best[player] or 0, s.score)
 	else
-		Profiles.noteTutorialCompleted(player)
+		ServerStorage:WaitForChild("TutorialCompleted"):Fire(player) -- ProfileService records it
 	end
 	sessions[player] = nil
 	finishedEvent:FireClient(player, {
@@ -78,7 +78,20 @@ local function startRound(player: Player, s: Session)
 	s.token = token
 	s.state = "active"
 	s.startedAt = now
-	s.outcome = Rules.solve(round.f, s.hist)
+	local solved, outcome = pcall(Rules.solve, round.f, s.hist)
+	if not solved then
+		-- A round the engine cannot evaluate is a data bug, never a paradox: end the session visibly instead of guessing.
+		warn(
+			("[Contradictions] round %d could not be evaluated: %s"):format(
+				s.index,
+				tostring(outcome)
+			)
+		)
+		sessions[player] = nil
+		finishedEvent:FireClient(player, { mode = s.mode, faulted = true })
+		return
+	end
+	s.outcome = outcome
 
 	roundEvent:FireClient(player, {
 		token = token,
@@ -113,17 +126,15 @@ function SessionService.resolve(player: Player, s: Session, pressed: boolean, ti
 
 	local round = s.list[s.index]
 	local o = s.outcome
-	local acceptable = if pressed then o.press else o.hold
-	local verdict = if o.kind == "none" then "paradox" elseif acceptable then "correct" else "wrong"
-	local died = verdict == "wrong" and s.mode == "run"
+	local verdict = Judge.verdict(o, pressed)
+	local died = Judge.isFatal(verdict, s.mode == "run")
 	local delta = 0
 
 	if verdict == "paradox" then
 		s.paradoxes += 1
 	elseif verdict == "correct" and s.mode == "run" then
 		s.streak += 1
-		delta = Config.POINTS
-			+ Config.STREAK_BONUS * math.min(s.streak - 1, Config.STREAK_BONUS_CAP)
+		delta = Judge.points(s.streak, Config.POINTS, Config.STREAK_BONUS, Config.STREAK_BONUS_CAP)
 		s.score += delta
 		s.correct += 1
 	elseif verdict == "wrong" then
@@ -208,9 +219,6 @@ local function onStart(player: Player, mode: any)
 		return
 	end
 	lastStart[player] = now
-	if mode == "tutorial" then
-		Profiles.noteChoice(player, "tutorial")
-	end
 	local s: Session = {
 		mode = mode,
 		list = if mode == "tutorial" then Rounds.tutorial else Rounds.run,
@@ -254,12 +262,6 @@ function SessionService.init()
 		end
 	end)
 	Remotes.get("Next", "RemoteEvent").OnServerEvent:Connect(onNext)
-	Remotes.get("Onboard", "RemoteEvent").OnServerEvent:Connect(function(player, choice: any)
-		if choice == "skip" then
-			Profiles.noteChoice(player, "skipped")
-		end
-	end)
-
 	Players.PlayerRemoving:Connect(function(player)
 		sessions[player], best[player], lastStart[player] = nil, nil, nil
 	end)

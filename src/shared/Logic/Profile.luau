@@ -63,6 +63,16 @@ function Profile.merge(old: any, patch: Patch): { [string]: any }
 	return out
 end
 
+-- Combine what the store says with what happened this session (after a failed first read).
+function Profile.union(stored: Record, session: Record): Record
+	return {
+		version = math.max(stored.version, session.version),
+		hasSeenOnboarding = stored.hasSeenOnboarding or session.hasSeenOnboarding,
+		hasCompletedTutorial = stored.hasCompletedTutorial or session.hasCompletedTutorial,
+		onboardingChoice = stored.onboardingChoice or session.onboardingChoice,
+	}
+end
+
 function Profile.new(store: Store, opts: Options?)
 	local o = opts or {}
 	return setmetatable({

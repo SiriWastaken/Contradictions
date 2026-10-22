@@ -154,26 +154,6 @@ function Rules.solve(f: Expr, hist: History): Outcome
 	}
 end
 
--- Largest lookback used by F, split by kind; used by tests to prove a round list is playable.
-function Rules.refs(f: Expr): { prev: number, told: number }
-	local r = { prev = 0, told = 0 }
-	local function walk(e: Expr)
-		if e.op == "prev" then
-			r.prev = math.max(r.prev, e.k :: number)
-		elseif e.op == "told" then
-			r.told = math.max(r.told, e.k :: number)
-		end
-		if e.a then
-			walk(e.a)
-		end
-		if e.b then
-			walk(e.b)
-		end
-	end
-	walk(f)
-	return r
-end
-
 Rules.eval = eval
 Rules.findStmt = findStmt
 Rules.uses = uses

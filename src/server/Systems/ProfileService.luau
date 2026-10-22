@@ -5,6 +5,8 @@
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -18,6 +20,8 @@ type State = {
 	pending: number,
 	unsaved: Profile.Patch?,
 }
+
+local serverRoot = script.Parent.Parent
 
 local ProfileService = {}
 
@@ -40,6 +44,8 @@ local function makeRealProfile()
 	return Profile.new(store, { attempts = 3, delay = 1, sleep = task.wait })
 end
 
+local retryLoad: (Player, State) -> ()
+
 local function load(player: Player)
 	local state: State = { status = "loading", record = Profile.default(), pending = 0 }
 	states[player] = state
@@ -58,6 +64,7 @@ local function load(player: Player)
 				player.Name
 			)
 		)
+		retryLoad(player, state)
 	else
 		state.record = record :: Profile.Record
 		state.status = if state.record.hasSeenOnboarding then "returning" else "new"
@@ -87,6 +94,35 @@ local function persist(state: State, player: Player, patch: Profile.Patch)
 			)
 		end
 		state.pending -= 1
+	end)
+end
+
+-- After a failed first read, keep trying quietly. If it succeeds, the stored record and whatever happened
+-- this session are combined, so nothing is lost and nobody is wrongly offered the tutorial.
+function retryLoad(player: Player, state: State)
+	task.spawn(function()
+		for _ = 1, Config.PROFILE_RETRIES do
+			task.wait(Config.PROFILE_RETRY_SECONDS)
+			if states[player] ~= state or not profile then
+				return
+			end
+			local status, stored = Profile.load(profile, keyFor(player))
+			if status ~= "failed" then
+				local before = state.record
+				state.record = Profile.union(stored :: Profile.Record, before)
+				state.status = if state.record.hasSeenOnboarding then "returning" else "new"
+				if
+					before.hasSeenOnboarding and not (stored :: Profile.Record).hasSeenOnboarding
+				then
+					persist(state, player, {
+						hasSeenOnboarding = true,
+						hasCompletedTutorial = before.hasCompletedTutorial,
+						onboardingChoice = before.onboardingChoice,
+					})
+				end
+				return
+			end
+		end
 	end)
 end
 
@@ -141,21 +177,52 @@ local function flush(player: Player)
 	end
 end
 
--- Test hooks: swap the backing store and re-run the load for a player already in the server.
-function ProfileService._useStore(store: any, opts: Profile.Options?)
-	profile = Profile.new(store, opts)
-end
-
-function ProfileService._reload(player: Player)
-	load(player)
-end
-
 function ProfileService.init()
+	if not ServerStorage:FindFirstChild("TutorialCompleted") then
+		local e = Instance.new("BindableEvent")
+		e.Name = "TutorialCompleted"
+		e.Parent = ServerStorage
+	end
 	getProfile = Remotes.get("GetProfile", "RemoteFunction")
 	profile = makeRealProfile()
+
+	-- Studio only: swap in an in-memory store (see DevStore) and reload everyone already here.
+	if RunService:IsStudio() then
+		local function applyDevStore()
+			local mode = ServerStorage:GetAttribute("DevStore")
+			if typeof(mode) ~= "string" then
+				return
+			end
+			-- selene: allow(incorrect_standard_library_use)
+			profile = Profile.new(
+				require(serverRoot.DevStore).make(mode, ServerStorage),
+				{ attempts = 2, delay = 0 }
+			)
+			for _, p in Players:GetPlayers() do
+				task.spawn(load, p)
+			end
+		end
+		ServerStorage:GetAttributeChangedSignal("DevStore"):Connect(applyDevStore)
+		applyDevStore()
+	end
 end
 
 function ProfileService.start()
+	-- Driven by remote and bindable events rather than a direct dependency on SessionService, so the two
+	-- systems cannot end up holding different copies of this module's state.
+	Remotes.get("Start", "RemoteEvent").OnServerEvent:Connect(function(player, mode: any)
+		if mode == "tutorial" then
+			ProfileService.noteChoice(player, "tutorial")
+		end
+	end)
+	Remotes.get("Onboard", "RemoteEvent").OnServerEvent:Connect(function(player, choice: any)
+		if choice == "skip" then
+			ProfileService.noteChoice(player, "skipped")
+		end
+	end)
+	ServerStorage:WaitForChild("TutorialCompleted").Event
+		:Connect(ProfileService.noteTutorialCompleted)
+
 	getProfile.OnServerInvoke = function(player: Player)
 		local state = ProfileService.wait(player)
 		if not state then

@@ -10,14 +10,12 @@ local Theme = {}
 
 Theme.color = {
 	ink = Color3.fromRGB(7, 8, 10),
-	soot = Color3.fromRGB(28, 26, 24),
 	bone = Color3.fromRGB(232, 226, 214),
 	ash = Color3.fromRGB(128, 122, 112),
 	-- fire
 	ember = Color3.fromRGB(255, 106, 26),
 	molten = Color3.fromRGB(224, 42, 20),
 	crimson = Color3.fromRGB(122, 15, 15),
-	burnt = Color3.fromRGB(184, 74, 18),
 	-- water
 	acid = Color3.fromRGB(112, 255, 96),
 	mint = Color3.fromRGB(188, 255, 226),
@@ -26,12 +24,9 @@ Theme.color = {
 }
 
 Theme.font = {
-	display = Font.fromEnum(Enum.Font.GrenzeGotisch),
 	displayBold = Font.new(Font.fromEnum(Enum.Font.GrenzeGotisch).Family, Enum.FontWeight.Bold),
 	type = Font.fromEnum(Enum.Font.SpecialElite),
 }
-
-Theme.unit = 8
 
 -- new("Frame", { Size = ... }, { child, child }) -> Instance
 function Theme.new(class: string, props: { [string]: any }, children: { Instance }?): any
@@ -81,7 +76,7 @@ function Theme.text(props: { [string]: any }): TextLabel
 	return Theme.new("TextLabel", props)
 end
 
--- The fire/water rule: ember on the left half, acid on the right. Used under titles; the timer inverts it.
+-- Divider under titles: ember on the left half, acid on the right.
 function Theme.rule(parent: Instance, width: UDim, order: number?): Frame
 	local f = Theme.new("Frame", {
 		Size = UDim2.new(width.Scale, width.Offset, 0, 2),

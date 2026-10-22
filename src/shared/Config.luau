@@ -12,4 +12,6 @@ return table.freeze({
 	STREAK_BONUS = 25,
 	STREAK_BONUS_CAP = 4,
 	STORE_NAME = "ContradictionsOnboarding",
+	PROFILE_RETRY_SECONDS = 15, -- a failed first read is retried this often...
+	PROFILE_RETRIES = 4, -- ...this many times, then the session stays on the fallback
 })

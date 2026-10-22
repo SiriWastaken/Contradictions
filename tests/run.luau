@@ -15,6 +15,8 @@ end
 require("./Rules.spec")(test)
 require("./Rounds.spec")(test)
 require("./Profile.spec")(test)
+require("./Judge.spec")(test)
+require("./Layout.spec")(test)
 
 print(("%d/%d passed"):format(total - failed, total))
 if failed > 0 then

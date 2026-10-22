@@ -139,4 +139,28 @@ return function(test: (string, () -> ()) -> ())
 		assert(Profile.new(store):update("k", { hasCompletedTutorial = true }))
 		assert(st.data.k.hasCompletedTutorial)
 	end)
+	test("P11 union of stored and session records never loses either side", function()
+		local stored = {
+			version = 1,
+			hasSeenOnboarding = true,
+			hasCompletedTutorial = true,
+			onboardingChoice = "tutorial",
+		}
+		local session = {
+			version = 1,
+			hasSeenOnboarding = true,
+			hasCompletedTutorial = false,
+			onboardingChoice = "skipped",
+		}
+		local u = Profile.union(stored, session)
+		assert(u.hasSeenOnboarding and u.hasCompletedTutorial and u.onboardingChoice == "tutorial")
+		local empty = Profile.default()
+		local u2 = Profile.union(empty, session)
+		assert(
+			u2.hasSeenOnboarding
+				and not u2.hasCompletedTutorial
+				and u2.onboardingChoice == "skipped"
+		)
+		assert(not Profile.union(empty, empty).hasSeenOnboarding)
+	end)
 end

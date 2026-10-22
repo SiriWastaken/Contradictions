@@ -17,6 +17,7 @@ local light: PointLight
 local capHome: Vector3
 local heat = 0 -- 0 calm .. 1 out of time
 local active = false
+local reduced = false -- photosensitivity: no light flicker
 local shown = 0 -- heat eased toward its target so the water never snaps
 
 function Scene.attach()
@@ -47,7 +48,11 @@ function Scene.attach()
 		water.Position = Vector3.new(0, y + math.sin(os.clock() * 1.3) * 0.03, 0)
 		-- Steady glow when calm; a ragged flicker only in the last second and a half.
 		local base = 0.8
-		light.Brightness = if active and heat > 0.7 then base + rng:NextNumber(-0.35, 0.5) else base
+		light.Brightness = if active
+				and heat > 0.7
+				and not reduced
+			then base + rng:NextNumber(-0.35, 0.5)
+			else base
 	end)
 end
 
@@ -61,6 +66,14 @@ end
 
 function Scene.onViewportChanged(fn: () -> ())
 	camera:GetPropertyChangedSignal("ViewportSize"):Connect(fn)
+end
+
+function Scene.setReduced(value: boolean)
+	reduced = value
+end
+
+function Scene.viewport(): Vector2
+	return camera.ViewportSize
 end
 
 function Scene.setHeat(value: number, isActive: boolean)

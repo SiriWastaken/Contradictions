@@ -45,19 +45,19 @@ local this: Expr = { op = "this" }
 local tutorial: { Round } = {
 	{
 		f = yes(),
-		coach = "Read the instruction. This one is simple: press the button before five seconds run out. In a real run, one wrong decision is fatal.",
+		coach = "Read the instruction. This one is simple: press the button before the five seconds run out. In a real run, one wrong decision ends it.",
 	},
 	{
 		f = no(),
-		coach = "Not every instruction wants a press. Doing nothing is a decision too. Let the five seconds run out.",
+		coach = "Not every instruction wants a press. Doing nothing is a decision too, so let the five seconds run out.",
 	},
 	{
 		f = disj(fact("a week has eight days", false), neg(fact("fire is cold", false))),
-		coach = "A condition is a test. If it is true, press. If it is false, hold. Work out each part.",
+		coach = "A condition is a test. If it's true, press. If it's false, hold. Work out each part first.",
 	},
 	{
 		f = prev(1),
-		coach = "Some instructions look back at what you did. Remember your last decision.",
+		coach = "Some instructions look back at what you did, so remember your last decision.",
 	},
 }
 
@@ -78,22 +78,22 @@ local run: { Round } = {
 	{
 		f = stmt(this),
 		tag = "SELF-REFERENCE",
-		lesson = "A statement that says only that it is true can be true or false without contradiction.",
+		lesson = "A statement that only says it is true can be true or false without contradiction.",
 	},
 	{
 		f = neg(me()),
 		tag = "SELF-REFERENCE",
-		lesson = "Press if you do not press: pressing makes the condition false, holding makes it true. Neither works.",
+		lesson = '"Press if you do not press." Pressing makes the condition false and holding makes it true, so neither works.',
 	},
 	{
 		f = stmt(neg(this)),
 		tag = "SELF-REFERENCE",
-		lesson = "The liar paradox. If the statement were true it would be false; if false, it would be true.",
+		lesson = "The liar paradox. If the statement is true it must be false, and if it's false it must be true.",
 	},
 	{
 		f = stmt(conj(neg(this), prev(1))),
 		tag = "SELF-REFERENCE + MEMORY",
-		lesson = "This paradox only exists if you pressed last round. Your past decision decides whether it is solvable.",
+		lesson = "This paradox only exists if you pressed last round. What you did then decides whether it can be solved.",
 	},
 	{ f = prev(1), tag = "MEMORY" },
 	{ f = told(1), tag = "RULES" },
@@ -101,7 +101,7 @@ local run: { Round } = {
 	{
 		f = conj(neg(prev(1)), stmt(this)),
 		tag = "FINAL",
-		lesson = "If you pressed last round the answer is forced; if not, the self-referential part leaves you free.",
+		lesson = "If you pressed last round, the answer is forced. If you didn't, the self-referential part leaves you free.",
 	},
 }
 
