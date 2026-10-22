@@ -1,0 +1,27 @@
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Studio autosaves and local backups (timestamped copies; the committed snapshot lives in place/)
+backups/*
+!backups/.gitkeep
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxl
+!place/Contradictions.rbxl
+
+# Claude Code local state (shared project settings stay tracked)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Secrets
+.env
+*.key
+
+# Wally / Rojo
+Packages/
+ServerPackages/
+DevPackages/
+wally.lock
+sourcemap.json
